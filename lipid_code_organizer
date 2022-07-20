@@ -1,0 +1,15 @@
+import pandas as pd
+
+data_file_path = "/Users/flomin/Desktop/composition_grid/setup_files/lipidomics_with_chol_scaled.csv"
+data_file = pd.read_csv(data_file_path)
+wanted_group = ["Cer", "SM", "HexCer"]
+codes_list = []
+for group in wanted_group:
+    codes_list.append(data_file.loc[data_file['lipid'] == group, ["lipid_code"]].values)
+new_data = ""
+count = 0
+for i in codes_list:
+    for g in i:
+        new_data = new_data + "  " + g
+        count += 1
+print(new_data[0])
