@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Sun Jun 12 08:48:57 2022
+
+@author: hila
+"""
+
+import os
+import glob
+import re
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+lipid_name_lookup = {'upper_leaflet_&_PE': 'PE',
+                    'upper_leaflet_&_PI': 'PI',
+                    'upper_leaflet_&_OE': 'PE (ether-linked)',
+                    'upper_leaflet_&_PA': 'PA',
+                    'upper_leaflet_&_OC': 'PC (ether-linked)',
+                    'upper_leaflet_&_PS': 'PS',
+                    'upper_leaflet_&_PC': 'PC',
+                    'upper_leaflet_SM': 'SM'}
+
+plot_position = {"PC": 1,
+                 "PC (ether-linked)": 2,
+                 "PE": 3,
+                 "PE (ether-linked)": 4,
+                 "PI": 5,
+                 "PS": 6,
+                 "PA": 7,
+                 "SM": 8}
+
+graph_label_lookup = ["0 mol%", "2 mol%", "4 mol%", "6 mol%", "8 mol%"]
+
+# lipid_name_lookup = {'lower_leaflet_PI': 'lower leaflet PI',
+#                      'upper_leaflet_PI': 'upper leaflet PI'}
+#
+# plot_position = {'lower leaflet PI': 1,
+#                  "upper leaflet PI": 2}
+
+
+def extract_diffusion_coeff(datafile):
+    with open(datafile, "r") as infile:
+        for line in infile:
+            if "cm" in line:
+                name = re.split("\[|]", line)[1].strip()
+                diff = line.split("=")[1].split()[0]
+                err = re.split('/|\)', line)[1].split()[-1]
+                return {"name": lipid_name_lookup.get(name, "X"), "diff": 1000 * float(diff), "err": 1000 * float(err),
+                        "pos": plot_position.get(lipid_name_lookup.get(name, "X"), 0)}
+
+
+def get_data(dataglob):
+    return pd.DataFrame.from_records([extract_diffusion_coeff(y) for y in dataglob]).sort_values("name",
+                                                                                                 ascending=False)
+
+
+# load data
+
+working_dir = "/Users/flomin/Desktop/WS/ps_outer_analysis"
+
+data_sources = glob.glob(os.path.join(working_dir, "ps*"))
+data = [(os.path.basename(i), get_data(glob.glob(os.path.join(i, "chainA_msd_upper_leaflet_*.xvg")))) for i in data_sources]
+# data = [(os.path.basename(i), get_data(glob.glob(os.path.join(i, "analysis/m*[!u]?.xvg")))) for i in data_sources]
+# turn xvg file to csv (20 is the number of text rows before data
+# pd.read_csv(filepath, skiprows=20, names=["time", "msd"], delim_whitespace=True)
+
+
+def pd_generator(original_df, update_dict, column_name):
+    # experiments = []
+    exp_count = 0
+    for item in original_df:
+        # experiments.append(item[0])
+        lipid_count = 0
+        for index, lipid in item[1].iterrows():
+            if lipid[0] != "X":
+                if column_name == 2:
+                    update_dict[lipid[0]].append(str(round(lipid[1], 1)) + "\n±" + str(round(lipid[column_name], 1)))
+                else:
+                    update_dict[lipid[0]].append(lipid[column_name])
+                lipid_count += 1
+        exp_count += 1
+        if lipid_count < len(plot_position):
+            for lipid in update_dict.keys():
+                if len(update_dict[lipid]) < exp_count:
+                    update_dict[lipid].append(float("nan"))
+    update_dict.update({"experiments": graph_label_lookup})
+    print(update_dict)
+    update_df = pd.DataFrame(update_dict)
+    update_df.set_index("experiments", inplace=True)
+    return update_df
+
+
+data.sort(key=lambda x: x[0])
+# for item in data:
+#     item[1].set_index("name", inplace=True)
+lipids = plot_position.keys()
+lipids_errors = {}
+lipids_data = {}
+for element in lipids:
+    lipids_errors.update({element: []})
+    lipids_data.update({element: []})
+df_data = pd_generator(data, lipids_data, 1)
+df_errors = pd_generator(data, lipids_errors, 2)
+ax = sns.heatmap(df_data, annot=df_errors, cmap="crest", fmt="", cbar_kws={'label': 'Diffusion Coefficient ($\mathregular{10^{-8}}$ cm$^2$/s)'})
+ax.set(ylabel="Outer Leaflet PS Concentration", xlabel="Lipid Type", title="Simulated diffusion coefficient values in the outer leaflet")
+plt.xticks(rotation=0)
+plt.show()
